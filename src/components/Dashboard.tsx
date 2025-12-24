@@ -11,6 +11,7 @@ interface DashboardProps {
   onDeleteSubject: (id: string) => Promise<{ ok: boolean; error?: string }>;
   onToggleStudyMode: () => void;
   onStartReview: (subjectId: string) => void;
+  onOpenManage: () => void;
   dueCounts: Record<string, number>;
   captures: Capture[];
   toast: string | null;
@@ -25,6 +26,7 @@ export function Dashboard({
   onDeleteSubject,
   onToggleStudyMode,
   onStartReview,
+  onOpenManage,
   dueCounts,
   captures,
   toast,
@@ -79,8 +81,6 @@ export function Dashboard({
     }
   };
 
-  const selectedDueCount = dueCounts[selectedSubjectId] || 0;
-
   return (
     <div className="dashboard">
       {/* Delete Modal */}
@@ -108,15 +108,17 @@ export function Dashboard({
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => onStartReview(selectedSubjectId)}
-              disabled={selectedDueCount === 0}
-              className="review-btn-header"
+            <button 
+              onClick={onOpenManage} 
+              className="flex items-center gap-1.5 px-3 py-2 bg-neutral-900 border border-neutral-800 rounded-lg text-neutral-400 text-sm hover:bg-neutral-800 hover:text-white hover:border-neutral-700 transition-all"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                <rect x="3" y="3" width="7" height="7" />
+                <rect x="14" y="3" width="7" height="7" />
+                <rect x="3" y="14" width="7" height="7" />
+                <rect x="14" y="14" width="7" height="7" />
               </svg>
-              Review{selectedDueCount > 0 && ` (${selectedDueCount})`}
+              Manage
             </button>
             <button onClick={onToggleStudyMode} className="study-btn-compact">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

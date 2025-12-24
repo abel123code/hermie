@@ -22,6 +22,17 @@ export interface Capture {
 
 export type SrsState = 'new' | 'learning' | 'review';
 export type Rating = 'again' | 'good' | 'easy';
+export type CaptureFilter = 'all' | 'due' | 'new' | 'learning' | 'review';
+
+// Lighter capture info for Manage page listing
+export interface CaptureListItem {
+  id: string;
+  subjectId: string;
+  imagePath: string;
+  createdAt: number;
+  state: SrsState;
+  dueAt: number;
+}
 
 export interface ReviewCard extends Capture {
   state: SrsState;
@@ -87,6 +98,22 @@ contextBridge.exposeInMainWorld('hermie', {
   // Image URL
   getImageUrl: (relativePath: string): Promise<string | null> => {
     return ipcRenderer.invoke('image:getUrl', { relativePath });
+  },
+
+  // Manage Page
+  manageListCaptures: (
+    subjectId: string,
+    filter: CaptureFilter,
+    limit: number,
+    offset: number
+  ): Promise<CaptureListItem[]> => {
+    return ipcRenderer.invoke('manage:listCaptures', { subjectId, filter, limit, offset });
+  },
+  manageCountCaptures: (subjectId: string): Promise<number> => {
+    return ipcRenderer.invoke('manage:countCaptures', { subjectId });
+  },
+  manageDeleteCapture: (id: string): Promise<{ ok: boolean; error?: string }> => {
+    return ipcRenderer.invoke('manage:deleteCapture', { id });
   },
   
   // Events

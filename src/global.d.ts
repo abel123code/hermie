@@ -28,6 +28,16 @@ interface CaptureSavedPayload {
 
 type SrsState = 'new' | 'learning' | 'review';
 type Rating = 'again' | 'good' | 'easy';
+type CaptureFilter = 'all' | 'due' | 'new' | 'learning' | 'review';
+
+interface CaptureListItem {
+  id: string;
+  subjectId: string;
+  imagePath: string;
+  createdAt: number;
+  state: SrsState;
+  dueAt: number;
+}
 
 interface ReviewCard extends Capture {
   state: SrsState;
@@ -64,6 +74,11 @@ declare global {
       
       // Image URL
       getImageUrl: (relativePath: string) => Promise<string | null>;
+
+      // Manage Page
+      manageListCaptures: (subjectId: string, filter: CaptureFilter, limit: number, offset: number) => Promise<CaptureListItem[]>;
+      manageCountCaptures: (subjectId: string) => Promise<number>;
+      manageDeleteCapture: (id: string) => Promise<{ ok: boolean; error?: string }>;
       
       // Events
       onStudyModeChanged: (callback: (isOn: boolean) => void) => void;

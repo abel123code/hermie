@@ -29,6 +29,19 @@ export interface ReviewCard extends Capture {
   lastReviewedAt: number | null;
 }
 
+// Lighter capture info for Manage page listing
+export interface CaptureListItem {
+  id: string;
+  subjectId: string;
+  imagePath: string;
+  createdAt: number;
+  state: SrsState;
+  dueAt: number;
+}
+
+// Filter types for listing captures
+export type CaptureFilter = 'all' | 'due' | 'new' | 'learning' | 'review';
+
 // SRS scheduling constants
 const AGAIN_MINUTES = 10;
 const GOOD_GRAD_DAYS = 1;
@@ -350,6 +363,81 @@ export function gradeCapture(
   );
   
   return { ok: true };
+}
+
+// ===== Manage Page Functions =====
+
+export function listCapturesBySubject(
+  subjectId: string,
+  filter: CaptureFilter,
+  limit: number,
+  offset: number,
+  now: number
+): CaptureListItem[] {
+  if (!db) throw new Error('Database not initialized');
+
+  let whereClause: string;
+  const params: (string | number)[] = [subjectId];
+
+  switch (filter) {
+    case 'due':
+      whereClause = 'subject_id = ? AND due_at <= ?';
+      params.push(now);
+      break;
+    case 'new':
+      whereClause = "subject_id = ? AND state = 'new'";
+      break;
+    case 'learning':
+      whereClause = "subject_id = ? AND state = 'learning'";
+      break;
+    case 'review':
+      whereClause = "subject_id = ? AND state = 'review'";
+      break;
+    case 'all':
+    default:
+      whereClause = 'subject_id = ?';
+      break;
+  }
+
+  const rows = db.prepare(`
+    SELECT
+      id,
+      subject_id as subjectId,
+      image_path as imagePath,
+      created_at as createdAt,
+      state,
+      due_at as dueAt
+    FROM captures
+    WHERE ${whereClause}
+    ORDER BY created_at DESC
+    LIMIT ? OFFSET ?
+  `).all(...params, limit, offset) as CaptureListItem[];
+
+  return rows;
+}
+
+export function countCapturesBySubject(subjectId: string): number {
+  if (!db) throw new Error('Database not initialized');
+
+  const row = db.prepare(`
+    SELECT COUNT(*) as count
+    FROM captures
+    WHERE subject_id = ?
+  `).get(subjectId) as { count: number };
+
+  return row.count;
+}
+
+export function getCaptureById(id: string): { imagePath: string } | null {
+  if (!db) throw new Error('Database not initialized');
+
+  const row = db.prepare(`
+    SELECT image_path as imagePath
+    FROM captures
+    WHERE id = ?
+  `).get(id) as { imagePath: string } | undefined;
+
+  return row ?? null;
 }
 
 export function closeDatabase(): void {

@@ -20,6 +20,16 @@ export interface UndoBubble {
 // SRS types
 export type SrsState = 'new' | 'learning' | 'review';
 export type Rating = 'again' | 'good' | 'easy';
+export type CaptureFilter = 'all' | 'due' | 'new' | 'learning' | 'review';
+
+export interface CaptureListItem {
+  id: string;
+  subjectId: string;
+  imagePath: string;
+  createdAt: number;
+  state: SrsState;
+  dueAt: number;
+}
 
 export interface ReviewCard extends Capture {
   state: SrsState;

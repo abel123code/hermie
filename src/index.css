@@ -624,32 +624,6 @@ body {
   cursor: not-allowed;
 }
 
-/* ===== HEADER REVIEW BUTTON ===== */
-.review-btn-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  border-radius: 8px;
-  border: 1px solid #404040;
-  font-size: 13px;
-  font-weight: 500;
-  color: #fafafa;
-  background: #262626;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.review-btn-header:hover:not(:disabled) {
-  background: #333333;
-  border-color: #525252;
-}
-
-.review-btn-header:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
 /* ===== REVIEW SCREEN ===== */
 .review-screen {
   width: 100%;
@@ -921,4 +895,16 @@ body {
   font-family: ui-monospace, monospace;
   font-size: 10px;
   margin-right: 4px;
+}
+
+/* Toast slide animation for Tailwind */
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
 }

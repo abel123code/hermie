@@ -20,7 +20,11 @@ import {
   getDueCount,
   getNextDueCapture,
   gradeCapture,
+  listCapturesBySubject,
+  countCapturesBySubject,
+  getCaptureById,
   type Rating,
+  type CaptureFilter,
 } from './services/db';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
@@ -541,4 +545,59 @@ ipcMain.handle('image:getUrl', (_event, { relativePath }: { relativePath: string
   }
   // Return custom protocol URL that will be handled by our protocol handler
   return `hermie-image://${relativePath}`;
+});
+
+// ===== Manage Page IPC Handlers =====
+
+// Delete capture AND its file
+async function deleteCaptureAndFile(id: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    // Look up the capture to get image_path
+    const capture = getCaptureById(id);
+    if (!capture) {
+      return { ok: false, error: 'Capture not found' };
+    }
+
+    // Compute absolute path
+    const absolutePath = path.join(getBaseDir(), capture.imagePath);
+
+    // Delete file if it exists
+    try {
+      if (fs.existsSync(absolutePath)) {
+        fs.unlinkSync(absolutePath);
+      }
+    } catch (fileErr) {
+      // Ignore ENOENT, log other errors
+      const err = fileErr as NodeJS.ErrnoException;
+      if (err.code !== 'ENOENT') {
+        console.error('Failed to delete file:', err);
+      }
+    }
+
+    // Delete from database
+    const deleted = deleteCapture(id);
+    if (!deleted) {
+      return { ok: false, error: 'Failed to delete from database' };
+    }
+
+    return { ok: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return { ok: false, error: message };
+  }
+}
+
+ipcMain.handle('manage:listCaptures', (
+  _event,
+  { subjectId, filter, limit, offset }: { subjectId: string; filter: CaptureFilter; limit: number; offset: number }
+) => {
+  return listCapturesBySubject(subjectId, filter, limit, offset, Date.now());
+});
+
+ipcMain.handle('manage:countCaptures', (_event, { subjectId }: { subjectId: string }) => {
+  return countCapturesBySubject(subjectId);
+});
+
+ipcMain.handle('manage:deleteCapture', async (_event, { id }: { id: string }) => {
+  return deleteCaptureAndFile(id);
 });
