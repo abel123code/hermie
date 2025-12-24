@@ -26,6 +26,19 @@ interface CaptureSavedPayload {
   expiresInMs: number;
 }
 
+type SrsState = 'new' | 'learning' | 'review';
+type Rating = 'again' | 'good' | 'easy';
+
+interface ReviewCard extends Capture {
+  state: SrsState;
+  dueAt: number;
+  intervalDays: number;
+  ease: number;
+  reps: number;
+  lapses: number;
+  lastReviewedAt: number | null;
+}
+
 declare global {
   interface Window {
     hermie: {
@@ -43,6 +56,14 @@ declare global {
       subjectsCreate: (name: string) => Promise<Subject | { error: string }>;
       subjectsRename: (id: string, name: string) => Promise<Subject | { error: string } | null>;
       subjectsDelete: (id: string) => Promise<{ ok: boolean; error?: string }>;
+      
+      // Review / SRS
+      reviewDueCount: (subjectId: string) => Promise<number>;
+      reviewNext: (subjectId: string) => Promise<ReviewCard | null>;
+      reviewGrade: (id: string, rating: Rating) => Promise<{ ok: boolean; error?: string }>;
+      
+      // Image URL
+      getImageUrl: (relativePath: string) => Promise<string | null>;
       
       // Events
       onStudyModeChanged: (callback: (isOn: boolean) => void) => void;

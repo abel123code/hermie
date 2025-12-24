@@ -17,3 +17,17 @@ export interface UndoBubble {
   status: 'active' | 'undone' | 'too-late';
 }
 
+// SRS types
+export type SrsState = 'new' | 'learning' | 'review';
+export type Rating = 'again' | 'good' | 'easy';
+
+export interface ReviewCard extends Capture {
+  state: SrsState;
+  dueAt: number;
+  intervalDays: number;
+  ease: number;
+  reps: number;
+  lapses: number;
+  lastReviewedAt: number | null;
+}
+

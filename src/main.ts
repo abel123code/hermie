@@ -1,10 +1,10 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, screen, shell, clipboard } from 'electron';
+import { app, BrowserWindow, globalShortcut, ipcMain, screen, shell, clipboard, protocol, net } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import started from 'electron-squirrel-startup';
-import { ensureBaseDirs, ensureSubjectDir, getImagesDir } from './services/storage';
+import { ensureBaseDirs, ensureSubjectDir, getImagesDir, getBaseDir } from './services/storage';
 import {
   initDatabase,
   closeDatabase,
@@ -17,12 +17,28 @@ import {
   insertCapture,
   getLatestCapturesBySubject,
   deleteCapture,
+  getDueCount,
+  getNextDueCapture,
+  gradeCapture,
+  type Rating,
 } from './services/db';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
   app.quit();
 }
+
+// Register custom protocol for serving local images
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'hermie-image',
+    privileges: {
+      secure: true,
+      supportFetchAPI: true,
+      stream: true,
+    },
+  },
+]);
 
 let dashboardWindow: BrowserWindow | null = null;
 let overlayWindow: BrowserWindow | null = null;
@@ -37,6 +53,10 @@ const UNDO_WINDOW_MS = 5000;
 
 // Undo state - only most recent capture is undoable
 let lastUndo: { id: string; absolutePath: string; expiresAt: number } | null = null;
+
+// Capture state management
+let captureInProgress = false;
+let captureAbortController: AbortController | null = null;
 
 function getOverlayPosition() {
   const { workArea } = screen.getPrimaryDisplay();
@@ -57,6 +77,8 @@ function toggleStudyMode(): boolean {
   if (isStudyMode) {
     // Switch to Study Mode: hide dashboard, show overlay
     dashboardWindow?.hide();
+    // Notify dashboard that study mode is on (so it stops making IPC calls)
+    dashboardWindow?.webContents.send('study:changed', true);
     if (overlayWindow) {
       const pos = getOverlayPosition();
       overlayWindow.setBounds({
@@ -71,6 +93,8 @@ function toggleStudyMode(): boolean {
   } else {
     // Exit Study Mode: hide overlay, show dashboard
     overlayWindow?.hide();
+    // Notify overlay that study mode is off
+    overlayWindow?.webContents.send('study:changed', false);
     if (dashboardWindow) {
       dashboardWindow.show();
       dashboardWindow.center();
@@ -92,20 +116,24 @@ function sanitizeSubjectId(id: string): string {
 }
 
 // Wait for any image in clipboard (Windows only - since shell.openExternal is fire-and-forget)
-// 60 attempts * 500ms = 30 seconds max wait time for user to complete the snip
-async function waitForClipboardImage(maxAttempts = 60, intervalMs = 500): Promise<Buffer> {
+// 40 attempts * 250ms = 10 seconds max wait time for user to complete the snip
+async function waitForClipboardImage(signal: AbortSignal, maxAttempts = 40, intervalMs = 250): Promise<Buffer> {
   for (let i = 0; i < maxAttempts; i++) {
+    // Check if aborted
+    if (signal.aborted) {
+      throw new Error('Screenshot cancelled');
+    }
     await new Promise(resolve => setTimeout(resolve, intervalMs));
     const img = clipboard.readImage();
     if (!img.isEmpty()) {
       return img.toPNG();
     }
   }
-  throw new Error('Screenshot cancelled');
+  throw new Error('Screenshot timed out - please try again');
 }
 
 // Main capture flow with subject support
-async function takeScreenshot(subjectId: string): Promise<{
+async function takeScreenshot(subjectId: string, signal: AbortSignal): Promise<{
   id: string;
   subjectId: string;
   imagePath: string;
@@ -125,7 +153,7 @@ async function takeScreenshot(subjectId: string): Promise<{
     } catch {
       await shell.openExternal('ms-screenclip:');
     }
-    pngBuffer = await waitForClipboardImage();
+    pngBuffer = await waitForClipboardImage(signal);
   } else if (platform === 'darwin') {
     // macOS: screencapture -i -c blocks until user completes
     await new Promise<void>((resolve, reject) => {
@@ -190,11 +218,23 @@ async function triggerCapture(subjectId: string) {
   const activeWindow = getActiveWindow();
   if (!activeWindow) return null;
 
+  // If a capture is already in progress, abort it first
+  if (captureInProgress && captureAbortController) {
+    console.log('CAPTURE: Aborting previous capture');
+    captureAbortController.abort();
+    // Small delay to let the abort propagate
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  
+  // Create new abort controller for this capture
+  captureAbortController = new AbortController();
+  captureInProgress = true;
+
   // Sanitize the subject ID
   const safeSubjectId = sanitizeSubjectId(subjectId);
 
   try {
-    const result = await takeScreenshot(safeSubjectId);
+    const result = await takeScreenshot(safeSubjectId, captureAbortController.signal);
     
     // Set up undo state
     lastUndo = {
@@ -210,6 +250,8 @@ async function triggerCapture(subjectId: string) {
       expiresInMs: UNDO_WINDOW_MS,
     });
 
+    captureInProgress = false;
+    captureAbortController = null;
     return {
       id: result.id,
       subjectId: result.subjectId,
@@ -217,9 +259,14 @@ async function triggerCapture(subjectId: string) {
       createdAt: result.createdAt,
     };
   } catch (error) {
+    captureInProgress = false;
+    captureAbortController = null;
     const message = error instanceof Error ? error.message : 'Failed to capture screenshot';
-    console.error('CAPTURE ERROR:', message);
-    activeWindow.webContents.send('toast', message);
+    // Only show error toast if not aborted (aborted means user started a new capture)
+    if (message !== 'Screenshot cancelled') {
+      console.error('CAPTURE ERROR:', message);
+      activeWindow.webContents.send('toast', message);
+    }
     return null;
   }
 }
@@ -328,10 +375,38 @@ const createWindows = () => {
   overlayWindow.on('closed', () => {
     overlayWindow = null;
   });
+
+  // When overlay regains focus while capturing, check if user cancelled (clipboard empty)
+  overlayWindow.on('focus', () => {
+    if (captureInProgress && captureAbortController) {
+      // Small delay to let clipboard update
+      setTimeout(() => {
+        const img = clipboard.readImage();
+        if (img.isEmpty()) {
+          console.log('CAPTURE: Detected focus return with empty clipboard, aborting');
+          captureAbortController?.abort();
+        }
+      }, 100);
+    }
+  });
 };
 
 // App ready
 app.on('ready', () => {
+  // Register protocol handler for local images
+  protocol.handle('hermie-image', (request) => {
+    // URL format: hermie-image://images/subjectId/uuid.png
+    const relativePath = decodeURIComponent(request.url.replace('hermie-image://', ''));
+    
+    // Validate path doesn't contain ".." 
+    if (relativePath.includes('..')) {
+      return new Response('Forbidden', { status: 403 });
+    }
+    
+    const absolutePath = path.join(getBaseDir(), relativePath);
+    return net.fetch(`file://${absolutePath}`);
+  });
+
   // Initialize database
   ensureBaseDirs();
   initDatabase();
@@ -442,4 +517,28 @@ ipcMain.handle('subjects:delete', (_event, { id }: { id: string }) => {
     console.error('Failed to delete subject:', error);
     return { ok: false, error: 'Failed to delete subject' };
   }
+});
+
+// ===== Review / SRS =====
+
+ipcMain.handle('review:dueCount', (_event, { subjectId }: { subjectId: string }) => {
+  return getDueCount(subjectId, Date.now());
+});
+
+ipcMain.handle('review:next', (_event, { subjectId }: { subjectId: string }) => {
+  return getNextDueCapture(subjectId, Date.now());
+});
+
+ipcMain.handle('review:grade', (_event, { id, rating }: { id: string; rating: Rating }) => {
+  return gradeCapture(id, rating, Date.now());
+});
+
+// Image URL
+ipcMain.handle('image:getUrl', (_event, { relativePath }: { relativePath: string }) => {
+  // Validate that path doesn't contain ".." to prevent directory traversal
+  if (relativePath.includes('..')) {
+    return null;
+  }
+  // Return custom protocol URL that will be handled by our protocol handler
+  return `hermie-image://${relativePath}`;
 });

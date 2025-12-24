@@ -14,6 +14,28 @@ export interface Capture {
   createdAt: number;
 }
 
+// SRS state types
+export type SrsState = 'new' | 'learning' | 'review';
+export type Rating = 'again' | 'good' | 'easy';
+
+// Full capture with SRS fields for review
+export interface ReviewCard extends Capture {
+  state: SrsState;
+  dueAt: number;
+  intervalDays: number;
+  ease: number;
+  reps: number;
+  lapses: number;
+  lastReviewedAt: number | null;
+}
+
+// SRS scheduling constants
+const AGAIN_MINUTES = 10;
+const GOOD_GRAD_DAYS = 1;
+const EASY_GRAD_DAYS = 3;
+const MS_PER_MINUTE = 60 * 1000;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
 let db: Database.Database | null = null;
 
 export function initDatabase(): void {
@@ -38,11 +60,22 @@ export function initDatabase(): void {
       subject_id TEXT NOT NULL,
       image_path TEXT NOT NULL,
       created_at INTEGER NOT NULL,
+
+      -- SRS fields
+      state TEXT NOT NULL DEFAULT 'new',
+      due_at INTEGER NOT NULL DEFAULT 0,
+      interval_days REAL NOT NULL DEFAULT 0,
+      ease REAL NOT NULL DEFAULT 2.3,
+      reps INTEGER NOT NULL DEFAULT 0,
+      lapses INTEGER NOT NULL DEFAULT 0,
+      last_reviewed_at INTEGER,
+
       FOREIGN KEY(subject_id) REFERENCES subjects(id)
     );
     
     CREATE INDEX IF NOT EXISTS idx_captures_subject_id ON captures(subject_id);
     CREATE INDEX IF NOT EXISTS idx_captures_created_at ON captures(created_at);
+    CREATE INDEX IF NOT EXISTS idx_captures_subject_due ON captures(subject_id, due_at);
   `);
   
   // Ensure inbox subject exists
@@ -138,9 +171,18 @@ export function insertCapture(capture: Capture): void {
   if (!db) throw new Error('Database not initialized');
   
   db.prepare(`
-    INSERT INTO captures (id, subject_id, image_path, created_at) 
-    VALUES (?, ?, ?, ?)
-  `).run(capture.id, capture.subjectId, capture.imagePath, capture.createdAt);
+    INSERT INTO captures (
+      id, subject_id, image_path, created_at,
+      state, due_at, interval_days, ease, reps, lapses, last_reviewed_at
+    ) 
+    VALUES (?, ?, ?, ?, 'new', ?, 0, 2.3, 0, 0, NULL)
+  `).run(
+    capture.id,
+    capture.subjectId,
+    capture.imagePath,
+    capture.createdAt,
+    capture.createdAt // due_at = createdAt (immediately due)
+  );
 }
 
 export function getLatestCapturesBySubject(subjectId: string, limit: number): Capture[] {
@@ -162,6 +204,152 @@ export function deleteCapture(id: string): boolean {
   
   const result = db.prepare('DELETE FROM captures WHERE id = ?').run(id);
   return result.changes > 0;
+}
+
+// ===== SRS Functions =====
+
+export function getDueCount(subjectId: string, now: number): number {
+  if (!db) throw new Error('Database not initialized');
+  
+  const row = db.prepare(`
+    SELECT COUNT(*) as count
+    FROM captures
+    WHERE subject_id = ?
+      AND due_at <= ?
+  `).get(subjectId, now) as { count: number };
+  
+  return row.count;
+}
+
+export function getNextDueCapture(subjectId: string, now: number): ReviewCard | null {
+  if (!db) throw new Error('Database not initialized');
+  
+  const row = db.prepare(`
+    SELECT
+      id,
+      subject_id as subjectId,
+      image_path as imagePath,
+      created_at as createdAt,
+      state,
+      due_at as dueAt,
+      interval_days as intervalDays,
+      ease,
+      reps,
+      lapses,
+      last_reviewed_at as lastReviewedAt
+    FROM captures
+    WHERE subject_id = ?
+      AND due_at <= ?
+    ORDER BY due_at ASC, created_at ASC
+    LIMIT 1
+  `).get(subjectId, now) as ReviewCard | undefined;
+  
+  return row ?? null;
+}
+
+export function gradeCapture(
+  id: string,
+  rating: Rating,
+  now: number
+): { ok: boolean; error?: string } {
+  if (!db) throw new Error('Database not initialized');
+  
+  // Fetch current card
+  const card = db.prepare(`
+    SELECT
+      state,
+      interval_days as intervalDays,
+      ease,
+      reps,
+      lapses
+    FROM captures
+    WHERE id = ?
+  `).get(id) as {
+    state: SrsState;
+    intervalDays: number;
+    ease: number;
+    reps: number;
+    lapses: number;
+  } | undefined;
+  
+  if (!card) {
+    return { ok: false, error: 'Card not found' };
+  }
+  
+  let newState: SrsState = card.state;
+  let newDueAt: number;
+  let newIntervalDays: number = card.intervalDays;
+  let newEase: number = card.ease;
+  let newReps: number = card.reps;
+  let newLapses: number = card.lapses;
+  
+  switch (rating) {
+    case 'again':
+      newState = 'learning';
+      newDueAt = now + AGAIN_MINUTES * MS_PER_MINUTE;
+      newEase = Math.max(1.3, card.ease - 0.2);
+      newIntervalDays = 0;
+      newReps = 0;
+      newLapses = card.lapses + 1;
+      break;
+      
+    case 'good':
+      if (card.state === 'new' || card.state === 'learning') {
+        // Graduating from new/learning
+        newState = 'review';
+        newIntervalDays = GOOD_GRAD_DAYS;
+        newDueAt = now + GOOD_GRAD_DAYS * MS_PER_DAY;
+        newEase = Math.min(2.8, card.ease + 0.05);
+      } else {
+        // Already in review
+        newIntervalDays = Math.max(1, card.intervalDays * card.ease);
+        newDueAt = now + newIntervalDays * MS_PER_DAY;
+        newEase = Math.min(2.8, card.ease + 0.02);
+      }
+      newReps = card.reps + 1;
+      break;
+      
+    case 'easy':
+      if (card.state === 'new' || card.state === 'learning') {
+        // Graduating from new/learning with easy bonus
+        newState = 'review';
+        newIntervalDays = EASY_GRAD_DAYS;
+        newDueAt = now + EASY_GRAD_DAYS * MS_PER_DAY;
+        newEase = Math.min(2.8, card.ease + 0.15);
+      } else {
+        // Already in review - apply easy multiplier
+        newIntervalDays = Math.max(1, card.intervalDays * card.ease * 1.3);
+        newDueAt = now + newIntervalDays * MS_PER_DAY;
+        newEase = Math.min(2.8, card.ease + 0.1);
+      }
+      newReps = card.reps + 1;
+      break;
+  }
+  
+  // Update the card
+  db.prepare(`
+    UPDATE captures
+    SET
+      state = ?,
+      due_at = ?,
+      interval_days = ?,
+      ease = ?,
+      reps = ?,
+      lapses = ?,
+      last_reviewed_at = ?
+    WHERE id = ?
+  `).run(
+    newState,
+    Math.round(newDueAt),
+    newIntervalDays,
+    newEase,
+    newReps,
+    newLapses,
+    now,
+    id
+  );
+  
+  return { ok: true };
 }
 
 export function closeDatabase(): void {

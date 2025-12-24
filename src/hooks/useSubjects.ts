@@ -3,22 +3,25 @@ import { Subject, Capture } from '../types';
 
 export function useSubjects() {
   const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [selectedSubjectId, setSelectedSubjectId] = useState<string>('inbox');
+  const [selectedSubjectId, setSelectedSubjectIdState] = useState<string>('inbox');
   const selectedSubjectIdRef = useRef<string>(selectedSubjectId);
   const [isLoading, setIsLoading] = useState(true);
 
   const selectedSubject = subjects.find(s => s.id === selectedSubjectId) || subjects[0];
 
-  // Keep ref in sync
-  useEffect(() => {
-    selectedSubjectIdRef.current = selectedSubjectId;
-  }, [selectedSubjectId]);
+  // Wrapper to keep ref in sync with state
+  const setSelectedSubjectId = useCallback((id: string) => {
+    selectedSubjectIdRef.current = id;
+    setSelectedSubjectIdState(id);
+  }, []);
 
+  // Load subjects only once on mount (no dependencies on selectedSubjectId)
   const loadSubjects = useCallback(async () => {
     try {
       const list = await window.hermie.subjectsList();
       setSubjects(list);
-      if (!list.find(s => s.id === selectedSubjectId)) {
+      // Use ref to check current selection without creating dependency
+      if (!list.find(s => s.id === selectedSubjectIdRef.current)) {
         setSelectedSubjectId('inbox');
       }
     } catch (error) {
@@ -26,11 +29,12 @@ export function useSubjects() {
     } finally {
       setIsLoading(false);
     }
-  }, [selectedSubjectId]);
+  }, [setSelectedSubjectId]);
 
+  // Only run once on mount
   useEffect(() => {
     loadSubjects();
-  }, [loadSubjects]);
+  }, []);
 
   const createSubject = async (name: string): Promise<{ ok: boolean; error?: string }> => {
     try {
@@ -52,7 +56,8 @@ export function useSubjects() {
       const result = await window.hermie.subjectsDelete(id);
       if (result.ok) {
         setSubjects(prev => prev.filter(s => s.id !== id));
-        if (selectedSubjectId === id) {
+        // Use ref for current selection to avoid stale closure
+        if (selectedSubjectIdRef.current === id) {
           setSelectedSubjectId('inbox');
         }
         return { ok: true };
@@ -64,12 +69,12 @@ export function useSubjects() {
     }
   };
 
-  const cycleSubject = () => {
+  const cycleSubject = useCallback(() => {
     if (subjects.length === 0) return;
-    const currentIndex = subjects.findIndex(s => s.id === selectedSubjectId);
+    const currentIndex = subjects.findIndex(s => s.id === selectedSubjectIdRef.current);
     const nextIndex = (currentIndex + 1) % subjects.length;
     setSelectedSubjectId(subjects[nextIndex].id);
-  };
+  }, [subjects, setSelectedSubjectId]);
 
   return {
     subjects,
@@ -104,5 +109,47 @@ export function useCaptures(selectedSubjectId: string, isLoading: boolean) {
   }, [selectedSubjectId, isLoading, loadCaptures]);
 
   return { captures, reload: loadCaptures };
+}
+
+// Hook to fetch due counts for all subjects
+export function useDueCounts(subjects: Subject[]) {
+  const [dueCounts, setDueCounts] = useState<Record<string, number>>({});
+  
+  // Store subjects in a ref to avoid dependency issues
+  const subjectsRef = useRef<Subject[]>(subjects);
+  subjectsRef.current = subjects;
+  
+  // Track previous subject IDs to detect actual changes
+  const prevSubjectIdsRef = useRef<string>('');
+
+  const loadDueCounts = useCallback(async () => {
+    const currentSubjects = subjectsRef.current;
+    if (currentSubjects.length === 0) return;
+    
+    try {
+      const counts: Record<string, number> = {};
+      // Fetch all due counts in parallel
+      await Promise.all(
+        currentSubjects.map(async (subject) => {
+          const count = await window.hermie.reviewDueCount(subject.id);
+          counts[subject.id] = count;
+        })
+      );
+      setDueCounts(counts);
+    } catch (error) {
+      console.error('Failed to load due counts:', error);
+    }
+  }, []);
+
+  // Reload only when subject IDs actually change
+  useEffect(() => {
+    const currentIds = subjects.map(s => s.id).join(',');
+    if (currentIds !== prevSubjectIdsRef.current) {
+      prevSubjectIdsRef.current = currentIds;
+      loadDueCounts();
+    }
+  }, [subjects, loadDueCounts]);
+
+  return { dueCounts, reload: loadDueCounts };
 }
 

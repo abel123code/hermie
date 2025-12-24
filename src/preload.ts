@@ -20,6 +20,19 @@ export interface Capture {
   createdAt: number;
 }
 
+export type SrsState = 'new' | 'learning' | 'review';
+export type Rating = 'again' | 'good' | 'easy';
+
+export interface ReviewCard extends Capture {
+  state: SrsState;
+  dueAt: number;
+  intervalDays: number;
+  ease: number;
+  reps: number;
+  lapses: number;
+  lastReviewedAt: number | null;
+}
+
 export interface CaptureSavedPayload {
   id: string;
   imagePath: string;
@@ -58,6 +71,22 @@ contextBridge.exposeInMainWorld('hermie', {
   },
   subjectsDelete: (id: string): Promise<{ ok: boolean; error?: string }> => {
     return ipcRenderer.invoke('subjects:delete', { id });
+  },
+  
+  // Review / SRS
+  reviewDueCount: (subjectId: string): Promise<number> => {
+    return ipcRenderer.invoke('review:dueCount', { subjectId });
+  },
+  reviewNext: (subjectId: string): Promise<ReviewCard | null> => {
+    return ipcRenderer.invoke('review:next', { subjectId });
+  },
+  reviewGrade: (id: string, rating: Rating): Promise<{ ok: boolean; error?: string }> => {
+    return ipcRenderer.invoke('review:grade', { id, rating });
+  },
+  
+  // Image URL
+  getImageUrl: (relativePath: string): Promise<string | null> => {
+    return ipcRenderer.invoke('image:getUrl', { relativePath });
   },
   
   // Events

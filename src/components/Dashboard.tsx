@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Subject, Capture } from '../types';
 import { DeleteModal } from './DeleteModal';
+import hermieLogo from '../../assets/hermie-logo.png';
 
 interface DashboardProps {
   subjects: Subject[];
@@ -9,6 +10,8 @@ interface DashboardProps {
   onCreateSubject: (name: string) => Promise<{ ok: boolean; error?: string }>;
   onDeleteSubject: (id: string) => Promise<{ ok: boolean; error?: string }>;
   onToggleStudyMode: () => void;
+  onStartReview: (subjectId: string) => void;
+  dueCounts: Record<string, number>;
   captures: Capture[];
   toast: string | null;
   onShowToast: (message: string) => void;
@@ -21,6 +24,8 @@ export function Dashboard({
   onCreateSubject,
   onDeleteSubject,
   onToggleStudyMode,
+  onStartReview,
+  dueCounts,
   captures,
   toast,
   onShowToast,
@@ -66,6 +71,16 @@ export function Dashboard({
     return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
+  const handleReviewClick = (e: React.MouseEvent, subjectId: string) => {
+    e.stopPropagation();
+    const count = dueCounts[subjectId] || 0;
+    if (count > 0) {
+      onStartReview(subjectId);
+    }
+  };
+
+  const selectedDueCount = dueCounts[selectedSubjectId] || 0;
+
   return (
     <div className="dashboard">
       {/* Delete Modal */}
@@ -82,20 +97,34 @@ export function Dashboard({
         {/* Header */}
         <div className="flex items-center justify-between w-full max-w-md mb-6">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center text-xl">
-              <span className="text-neutral-900 font-semibold">H</span>
-            </div>
+            <img 
+              src={hermieLogo} 
+              alt="Hermie" 
+              className="w-10 h-10 rounded-xl object-cover"
+            />
             <div>
               <h1 className="text-xl font-semibold text-white">Hermie</h1>
               <span className="text-xs text-neutral-600">v1.0</span>
             </div>
           </div>
-          <button onClick={onToggleStudyMode} className="study-btn-compact">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-            </svg>
-            Study
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => onStartReview(selectedSubjectId)}
+              disabled={selectedDueCount === 0}
+              className="review-btn-header"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              </svg>
+              Review{selectedDueCount > 0 && ` (${selectedDueCount})`}
+            </button>
+            <button onClick={onToggleStudyMode} className="study-btn-compact">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+              </svg>
+              Study
+            </button>
+          </div>
         </div>
 
         {/* Subjects Panel */}
@@ -132,36 +161,48 @@ export function Dashboard({
 
           {/* Subject list */}
           <div className="subject-list">
-            {subjects.map((subject) => (
-              <div
-                key={subject.id}
-                onClick={() => onSelectSubject(subject.id)}
-                className={`subject-row ${selectedSubjectId === subject.id ? 'selected' : ''}`}
-              >
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-neutral-200">{subject.name}</span>
-                  {subject.id === 'inbox' && (
-                    <span className="text-xs text-neutral-500">Default</span>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  {subject.id !== 'inbox' && (
+            {subjects.map((subject) => {
+              const dueCount = dueCounts[subject.id] || 0;
+              return (
+                <div
+                  key={subject.id}
+                  onClick={() => onSelectSubject(subject.id)}
+                  className={`subject-row ${selectedSubjectId === subject.id ? 'selected' : ''}`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-neutral-200">{subject.name}</span>
+                    {subject.id === 'inbox' && (
+                      <span className="text-xs text-neutral-500">Default</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {/* Review button */}
                     <button
-                      onClick={(e) => handleDeleteClick(e, subject)}
-                      className="subject-delete-btn"
-                      title="Delete subject"
+                      onClick={(e) => handleReviewClick(e, subject.id)}
+                      disabled={dueCount === 0}
+                      className="subject-review-btn"
+                      title={dueCount > 0 ? `Review ${dueCount} cards` : 'No cards due'}
                     >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
-                      </svg>
+                      Review{dueCount > 0 && ` (${dueCount})`}
                     </button>
-                  )}
-                  {selectedSubjectId === subject.id && (
-                    <div className="w-1.5 h-1.5 rounded-full bg-white" />
-                  )}
+                    {subject.id !== 'inbox' && (
+                      <button
+                        onClick={(e) => handleDeleteClick(e, subject)}
+                        className="subject-delete-btn"
+                        title="Delete subject"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+                        </svg>
+                      </button>
+                    )}
+                    {selectedSubjectId === subject.id && (
+                      <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 

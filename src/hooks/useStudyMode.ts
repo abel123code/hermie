@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { UndoBubble } from '../types';
 
 export function useStudyMode(
@@ -9,6 +9,23 @@ export function useStudyMode(
   const [toast, setToast] = useState<string | null>(null);
   const [undoBubble, setUndoBubble] = useState<UndoBubble | null>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  
+  // Store onCaptureComplete in a ref to avoid stale closures
+  const onCaptureCompleteRef = useRef(onCaptureComplete);
+  onCaptureCompleteRef.current = onCaptureComplete;
+
+  // Stable capture function that uses refs
+  const handleCapture = useCallback(async () => {
+    const result = await window.hermie.capture(selectedSubjectIdRef.current || 'inbox');
+    if (result) {
+      console.log('Capture result:', result);
+      onCaptureCompleteRef.current();
+    }
+  }, [selectedSubjectIdRef]);
+  
+  // Store handleCapture in a ref for the effect to use
+  const handleCaptureRef = useRef(handleCapture);
+  handleCaptureRef.current = handleCapture;
 
   useEffect(() => {
     window.hermie.getStudyMode().then(setStudyMode);
@@ -41,7 +58,8 @@ export function useStudyMode(
     });
 
     window.hermie.onCaptureTrigger(() => {
-      handleCapture();
+      // Use ref to get the latest handleCapture
+      handleCaptureRef.current();
     });
 
     return () => {
@@ -53,14 +71,6 @@ export function useStudyMode(
 
   const toggleStudyMode = async () => {
     await window.hermie.toggleStudyMode();
-  };
-
-  const handleCapture = async () => {
-    const result = await window.hermie.capture(selectedSubjectIdRef.current || 'inbox');
-    if (result) {
-      console.log('Capture result:', result);
-      onCaptureComplete();
-    }
   };
 
   const handleUndo = async () => {
@@ -75,7 +85,7 @@ export function useStudyMode(
     if (result.ok) {
       setUndoBubble({ ...undoBubble, status: 'undone' });
       setTimeout(() => setUndoBubble(null), 1000);
-      onCaptureComplete();
+      onCaptureCompleteRef.current();
     } else {
       setUndoBubble({ ...undoBubble, status: 'too-late' });
       setTimeout(() => setUndoBubble(null), 1000);

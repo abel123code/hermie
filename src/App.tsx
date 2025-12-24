@@ -1,10 +1,17 @@
-import React from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { StudyOverlay } from './components/StudyOverlay';
 import { Dashboard } from './components/Dashboard';
-import { useSubjects, useCaptures } from './hooks/useSubjects';
+import { ReviewScreen } from './components/ReviewScreen';
+import { useSubjects, useCaptures, useDueCounts } from './hooks/useSubjects';
 import { useStudyMode } from './hooks/useStudyMode';
 
+type View = 'dashboard' | 'review';
+
 function App() {
+  // View state
+  const [view, setView] = useState<View>('dashboard');
+  const [reviewSubjectId, setReviewSubjectId] = useState<string>('inbox');
+
   // Subjects & captures
   const {
     subjects,
@@ -18,6 +25,14 @@ function App() {
   } = useSubjects();
 
   const { captures, reload: reloadCaptures } = useCaptures(selectedSubjectId, isLoading);
+  const { dueCounts, reload: reloadDueCounts } = useDueCounts(subjects);
+  
+  // Store reload functions in refs to avoid dependency issues
+  const reloadDueCountsRef = useRef(reloadDueCounts);
+  reloadDueCountsRef.current = reloadDueCounts;
+  
+  const reloadCapturesRef = useRef(reloadCaptures);
+  reloadCapturesRef.current = reloadCaptures;
 
   // Study mode & capture handling
   const {
@@ -28,7 +43,24 @@ function App() {
     handleCapture,
     handleUndo,
     showToast,
-  } = useStudyMode(selectedSubjectIdRef, reloadCaptures);
+  } = useStudyMode(selectedSubjectIdRef, useCallback(() => reloadCapturesRef.current(), []));
+
+  // Start review for a subject
+  const handleStartReview = useCallback((subjectId: string) => {
+    setReviewSubjectId(subjectId);
+    setView('review');
+  }, []);
+
+  // Exit review back to dashboard
+  const handleExitReview = useCallback(() => {
+    setView('dashboard');
+    // Reload due counts when coming back from review
+    reloadDueCountsRef.current();
+  }, []);
+
+  // Get subject name for review screen
+  const reviewSubject = subjects.find(s => s.id === reviewSubjectId);
+  const reviewSubjectName = reviewSubject?.name || 'Unknown';
 
   // Loading state
   if (isLoading) {
@@ -41,7 +73,7 @@ function App() {
     );
   }
 
-  // Study Mode
+  // Study Mode (overlay takes precedence)
   if (studyMode) {
     return (
       <StudyOverlay
@@ -57,6 +89,18 @@ function App() {
     );
   }
 
+  // Review screen
+  if (view === 'review') {
+    return (
+      <ReviewScreen
+        subjectId={reviewSubjectId}
+        subjectName={reviewSubjectName}
+        onBack={handleExitReview}
+        onShowToast={showToast}
+      />
+    );
+  }
+
   // Dashboard
   return (
     <Dashboard
@@ -66,6 +110,8 @@ function App() {
       onCreateSubject={createSubject}
       onDeleteSubject={deleteSubject}
       onToggleStudyMode={toggleStudyMode}
+      onStartReview={handleStartReview}
+      dueCounts={dueCounts}
       captures={captures}
       toast={toast}
       onShowToast={showToast}
