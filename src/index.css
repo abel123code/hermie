@@ -160,7 +160,7 @@ body {
   justify-content: center;
   position: relative;
   overflow: hidden;
-  border-radius: 12px;
+  /* No border-radius - window has native frame with controls */
 }
 
 /* Subtle background gradient */

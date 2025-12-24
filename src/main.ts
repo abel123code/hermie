@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import started from 'electron-squirrel-startup';
-import { ensureBaseDirs, ensureSubjectDir, getAbsoluteImagePath, getImagesDir } from './services/storage';
+import { ensureBaseDirs, ensureSubjectDir, getImagesDir } from './services/storage';
 import {
   initDatabase,
   closeDatabase,
@@ -24,7 +24,8 @@ if (started) {
   app.quit();
 }
 
-let mainWindow: BrowserWindow | null = null;
+let dashboardWindow: BrowserWindow | null = null;
+let overlayWindow: BrowserWindow | null = null;
 let isStudyMode = false;
 
 const NORMAL_WIDTH = 900;
@@ -45,35 +46,38 @@ function getOverlayPosition() {
   };
 }
 
-function applyStudyMode(isOn: boolean) {
-  if (!mainWindow) return;
-
-  if (isOn) {
-    const pos = getOverlayPosition();
-    mainWindow.setAlwaysOnTop(true, 'floating');
-    mainWindow.setVisibleOnAllWorkspaces(true);
-    mainWindow.setSkipTaskbar(true);
-    mainWindow.setResizable(false);
-    mainWindow.setBounds({
-      x: pos.x,
-      y: pos.y,
-      width: OVERLAY_WIDTH,
-      height: OVERLAY_HEIGHT,
-    }, true);
-  } else {
-    mainWindow.setAlwaysOnTop(false);
-    mainWindow.setVisibleOnAllWorkspaces(false);
-    mainWindow.setSkipTaskbar(false);
-    mainWindow.setResizable(true);
-    mainWindow.setSize(NORMAL_WIDTH, NORMAL_HEIGHT);
-    mainWindow.center();
-  }
+// Get the currently active window for IPC
+function getActiveWindow(): BrowserWindow | null {
+  return isStudyMode ? overlayWindow : dashboardWindow;
 }
 
 function toggleStudyMode(): boolean {
   isStudyMode = !isStudyMode;
-  applyStudyMode(isStudyMode);
-  mainWindow?.webContents.send('study:changed', isStudyMode);
+
+  if (isStudyMode) {
+    // Switch to Study Mode: hide dashboard, show overlay
+    dashboardWindow?.hide();
+    if (overlayWindow) {
+      const pos = getOverlayPosition();
+      overlayWindow.setBounds({
+        x: pos.x,
+        y: pos.y,
+        width: OVERLAY_WIDTH,
+        height: OVERLAY_HEIGHT,
+      });
+      overlayWindow.show();
+      overlayWindow.webContents.send('study:changed', true);
+    }
+  } else {
+    // Exit Study Mode: hide overlay, show dashboard
+    overlayWindow?.hide();
+    if (dashboardWindow) {
+      dashboardWindow.show();
+      dashboardWindow.center();
+      dashboardWindow.webContents.send('study:changed', false);
+    }
+  }
+
   return isStudyMode;
 }
 
@@ -183,7 +187,8 @@ async function takeScreenshot(subjectId: string): Promise<{
 
 // Trigger capture with error handling
 async function triggerCapture(subjectId: string) {
-  if (!mainWindow) return null;
+  const activeWindow = getActiveWindow();
+  if (!activeWindow) return null;
 
   // Sanitize the subject ID
   const safeSubjectId = sanitizeSubjectId(subjectId);
@@ -199,7 +204,7 @@ async function triggerCapture(subjectId: string) {
     };
 
     // Send capture:saved event to renderer for the undo bubble
-    mainWindow.webContents.send('capture:saved', {
+    activeWindow.webContents.send('capture:saved', {
       id: result.id,
       imagePath: result.imagePath,
       expiresInMs: UNDO_WINDOW_MS,
@@ -214,7 +219,7 @@ async function triggerCapture(subjectId: string) {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to capture screenshot';
     console.error('CAPTURE ERROR:', message);
-    mainWindow.webContents.send('toast', message);
+    activeWindow.webContents.send('toast', message);
     return null;
   }
 }
@@ -262,14 +267,19 @@ function generateSubjectId(name: string): string {
   return `${base}-${counter}`;
 }
 
-const createWindow = () => {
-  // Create the browser window with transparency enabled
-  mainWindow = new BrowserWindow({
+const createWindows = () => {
+  // App icon path (use .ico on Windows, .png on others)
+  const iconPath = process.platform === 'win32'
+    ? path.join(__dirname, '../../assets/hermie-logo.png')
+    : path.join(__dirname, '../../assets/hermie-logo.png');
+
+  // Create the main dashboard window with native frame (visible close/minimize/maximize)
+  dashboardWindow = new BrowserWindow({
     width: NORMAL_WIDTH,
     height: NORMAL_HEIGHT,
-    transparent: true,
-    frame: false,
-    hasShadow: false,
+    frame: true,
+    titleBarStyle: 'default',
+    icon: iconPath,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -277,14 +287,47 @@ const createWindow = () => {
     },
   });
 
-  // Load the app
+  // Create the overlay window (frameless, for Study Mode)
+  const pos = getOverlayPosition();
+  overlayWindow = new BrowserWindow({
+    width: OVERLAY_WIDTH,
+    height: OVERLAY_HEIGHT,
+    x: pos.x,
+    y: pos.y,
+    transparent: true,
+    frame: false,
+    hasShadow: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: false,
+    show: false, // Hidden by default
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  });
+
+  // Load the app in both windows
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
-    mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
+    dashboardWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
+    overlayWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
   } else {
-    mainWindow.loadFile(
-      path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
-    );
+    const indexPath = path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`);
+    dashboardWindow.loadFile(indexPath);
+    overlayWindow.loadFile(indexPath);
   }
+
+  // Handle dashboard window close
+  dashboardWindow.on('closed', () => {
+    dashboardWindow = null;
+    overlayWindow?.close();
+  });
+
+  // Handle overlay window close
+  overlayWindow.on('closed', () => {
+    overlayWindow = null;
+  });
 };
 
 // App ready
@@ -293,7 +336,7 @@ app.on('ready', () => {
   ensureBaseDirs();
   initDatabase();
   
-  createWindow();
+  createWindows();
 
   // Register global shortcuts
   globalShortcut.register('Alt+S', () => {
@@ -304,7 +347,7 @@ app.on('ready', () => {
     if (isStudyMode) {
       // For hotkey, we need to get the selected subject from renderer
       // For now, default to inbox - renderer will use IPC with subjectId
-      mainWindow?.webContents.send('capture:trigger');
+      overlayWindow?.webContents.send('capture:trigger');
     }
   });
 });
@@ -324,7 +367,9 @@ app.on('window-all-closed', () => {
 
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
+    createWindows();
+  } else if (dashboardWindow && !isStudyMode) {
+    dashboardWindow.show();
   }
 });
 

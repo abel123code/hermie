@@ -10,6 +10,8 @@ import { FuseV1Options, FuseVersion } from '@electron/fuses';
 const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
+    // App icon (without extension - Forge picks the right one for each platform)
+    icon: './assets/hermie-logo.png'
   },
   rebuildConfig: {},
   makers: [
