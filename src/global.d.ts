@@ -85,6 +85,7 @@ declare global {
       onCaptureSaved: (callback: (payload: CaptureSavedPayload) => void) => void;
       onCaptureTrigger: (callback: () => void) => void;
       onToast: (callback: (message: string) => void) => void;
+      onSubjectsChanged: (callback: () => void) => void;
     };
   }
 }

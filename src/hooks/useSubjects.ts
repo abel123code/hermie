@@ -31,10 +31,20 @@ export function useSubjects() {
     }
   }, [setSelectedSubjectId]);
 
-  // Only run once on mount
+  // Load subjects on mount and subscribe to changes
   useEffect(() => {
     loadSubjects();
-  }, []);
+    
+    // Subscribe to subjects:changed event from main process
+    window.hermie.onSubjectsChanged(() => {
+      loadSubjects();
+    });
+    
+    // Cleanup: remove listener on unmount (though onSubjectsChanged already handles this)
+    return () => {
+      // The preload's onSubjectsChanged already removes listeners, but we can add explicit cleanup if needed
+    };
+  }, [loadSubjects]);
 
   const createSubject = async (name: string): Promise<{ ok: boolean; error?: string }> => {
     try {

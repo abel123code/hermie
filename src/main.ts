@@ -49,7 +49,7 @@ let overlayWindow: BrowserWindow | null = null;
 let isStudyMode = false;
 
 const NORMAL_WIDTH = 900;
-const NORMAL_HEIGHT = 650;
+const NORMAL_HEIGHT = 850;
 const OVERLAY_WIDTH = 360;  // Wide enough for pill (84px) + panel (260px) + gap
 const OVERLAY_HEIGHT = 280;  // Enough for 200px pill + padding
 const MARGIN = 16;
@@ -73,6 +73,12 @@ function getOverlayPosition() {
 // Get the currently active window for IPC
 function getActiveWindow(): BrowserWindow | null {
   return isStudyMode ? overlayWindow : dashboardWindow;
+}
+
+// Broadcast subjects:changed event to all windows
+function notifySubjectsChanged(): void {
+  dashboardWindow?.webContents.send('subjects:changed');
+  overlayWindow?.webContents.send('subjects:changed');
 }
 
 function toggleStudyMode(): boolean {
@@ -487,7 +493,9 @@ ipcMain.handle('subjects:create', (_event, { name }: { name: string }) => {
     return { error: 'A subject with this name already exists' };
   }
   const id = generateSubjectId(name);
-  return dbCreateSubject(id, name);
+  const subject = dbCreateSubject(id, name);
+  notifySubjectsChanged();
+  return subject;
 });
 
 ipcMain.handle('subjects:rename', (_event, { id, name }: { id: string; name: string }) => {
@@ -497,7 +505,11 @@ ipcMain.handle('subjects:rename', (_event, { id, name }: { id: string; name: str
   if (duplicate) {
     return { error: 'A subject with this name already exists' };
   }
-  return dbRenameSubject(id, name);
+  const result = dbRenameSubject(id, name);
+  if (result) {
+    notifySubjectsChanged();
+  }
+  return result;
 });
 
 ipcMain.handle('subjects:delete', (_event, { id }: { id: string }) => {
@@ -516,7 +528,10 @@ ipcMain.handle('subjects:delete', (_event, { id }: { id: string }) => {
 
     // Delete from database
     const result = dbDeleteSubject(id);
-    return { ok: result };
+    if (result.ok) {
+      notifySubjectsChanged();
+    }
+    return result;
   } catch (error) {
     console.error('Failed to delete subject:', error);
     return { ok: false, error: 'Failed to delete subject' };

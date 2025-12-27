@@ -142,4 +142,10 @@ contextBridge.exposeInMainWorld('hermie', {
       callback(message);
     });
   },
+  onSubjectsChanged: (callback: () => void): void => {
+    ipcRenderer.removeAllListeners('subjects:changed');
+    ipcRenderer.on('subjects:changed', () => {
+      callback();
+    });
+  },
 });

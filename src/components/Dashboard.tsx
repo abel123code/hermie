@@ -240,6 +240,12 @@ export function Dashboard({
           <kbd>S</kbd>
           <span className="text-neutral-500 ml-2">to toggle Study Mode</span>
         </p>
+        <p className="hint-text mt-4">
+          <kbd>Alt</kbd>
+          <span className="hint-plus">+</span>
+          <kbd>X</kbd>
+          <span className="text-neutral-500 ml-2">to capture a screenshot</span>
+        </p>
       </div>
 
       {/* Toast */}

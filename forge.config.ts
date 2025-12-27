@@ -15,7 +15,7 @@ const config: ForgeConfig = {
       unpack: '*.{node,dylib}',
       unpackDir: '{better-sqlite3}',
     },
-    icon: './assets/hermie-logo.png'
+    icon: './assets/hermie-logo.ico'
   },
   rebuildConfig: {
     onlyModules: ['better-sqlite3'],
