@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -o \"text-\\\\|bg-\\\\|border-\\\\|w-\\\\|h-\\\\|rounded-\\\\|shadow-\\\\|gap-\\\\|flex-\\\\|p-\\\\|m-\\\\|hover:\\\\|active:\\\\|disabled:\\\\|animate-\" /c/Users/65837/Desktop/hermie/src/components/*.tsx)",
+      "Bash(grep -rho \"text-[a-z0-9-]*\\\\|bg-[a-z0-9-]*\\\\|border-[a-z0-9-]*\\\\|w-[a-z0-9-\\\\[\\\\]]*\\\\|h-[a-z0-9-\\\\[\\\\]]*\\\\|rounded-[a-z0-9-]*\\\\|shadow-[a-z0-9-]*\\\\|gap-[a-z0-9-]*\\\\|p-[a-z0-9-]*\\\\|m-[a-z0-9-]*\\\\|hover:[a-z0-9-:]*\\\\|active:[a-z0-9-:]*\\\\|animate-[a-z0-9-]*\" /c/Users/65837/Desktop/hermie/src/components/*.tsx)",
+      "Bash(npx tsc:*)",
+      "Bash(npm start:*)"
+    ]
+  }
+}

@@ -80,6 +80,11 @@ declare global {
       manageCountCaptures: (subjectId: string) => Promise<number>;
       manageDeleteCapture: (id: string) => Promise<{ ok: boolean; error?: string }>;
       
+      // Gamification
+      statsGet: () => Promise<any>;
+      statsAddXP: (amount: number) => Promise<any>;
+      statsGetLevel: (totalXp: number) => Promise<any>;
+
       // Events
       onStudyModeChanged: (callback: (isOn: boolean) => void) => void;
       onCaptureSaved: (callback: (payload: CaptureSavedPayload) => void) => void;

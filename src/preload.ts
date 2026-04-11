@@ -116,6 +116,17 @@ contextBridge.exposeInMainWorld('hermie', {
     return ipcRenderer.invoke('manage:deleteCapture', { id });
   },
   
+  // Gamification
+  statsGet: (): Promise<any> => {
+    return ipcRenderer.invoke('stats:get');
+  },
+  statsAddXP: (amount: number): Promise<any> => {
+    return ipcRenderer.invoke('stats:addXP', { amount });
+  },
+  statsGetLevel: (totalXp: number): Promise<any> => {
+    return ipcRenderer.invoke('stats:getLevel', { totalXp });
+  },
+
   // Events
   onStudyModeChanged: (callback: (isOn: boolean) => void): void => {
     ipcRenderer.removeAllListeners('study:changed');

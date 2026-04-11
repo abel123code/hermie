@@ -60,7 +60,7 @@ export function OverlayPill({
       {/* Scissors button */}
       <button
         onClick={onCapture}
-        className="w-14 h-14 rounded-full bg-white/[0.08] border border-white/[0.18] text-white/85 flex items-center justify-center cursor-pointer transition-all duration-200 hover:bg-white/[0.18] hover:scale-[1.03] hover:border-white/30 hover:text-white active:scale-[0.97]"
+        className="w-14 h-14 rounded-full bg-[rgba(232,67,10,0.25)] border border-[rgba(232,67,10,0.4)] text-white/90 flex items-center justify-center cursor-pointer transition-all duration-200 hover:bg-[rgba(232,67,10,0.45)] hover:scale-[1.03] hover:shadow-[0_4px_16px_rgba(232,67,10,0.3)] hover:text-white active:scale-[0.97]"
         title="Capture Screenshot (Alt+X)"
       >
         <svg

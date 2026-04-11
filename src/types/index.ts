@@ -41,3 +41,30 @@ export interface ReviewCard extends Capture {
   lastReviewedAt: number | null;
 }
 
+// ===== Gamification Types =====
+
+export interface UserStats {
+  totalXp: number;
+  currentStreak: number;
+  longestStreak: number;
+  lastStudyDate: string | null;
+  cardsReviewedToday: number;
+}
+
+export interface LevelInfo {
+  level: number;
+  title: string;
+  currentXp: number;
+  xpForCurrentLevel: number;
+  xpForNextLevel: number;
+  progress: number; // 0-1
+}
+
+export interface XPGainResult {
+  xpGained: number;
+  newTotalXp: number;
+  leveledUp: boolean;
+  newLevel: LevelInfo;
+  stats: UserStats;
+}
+

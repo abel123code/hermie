@@ -1,0 +1,63 @@
+import React from 'react';
+
+interface ProgressRingProps {
+  progress: number; // 0-1
+  size?: number;
+  strokeWidth?: number;
+  color?: string;
+  bgColor?: string;
+  children?: React.ReactNode;
+}
+
+export function ProgressRing({
+  progress,
+  size = 64,
+  strokeWidth = 5,
+  color = '#6C5CE7',
+  bgColor = '#E2E5F0',
+  children,
+}: ProgressRingProps) {
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference * (1 - Math.min(1, Math.max(0, progress)));
+
+  return (
+    <div style={{ position: 'relative', width: size, height: size }}>
+      <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke={bgColor}
+          strokeWidth={strokeWidth}
+        />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke={color}
+          strokeWidth={strokeWidth}
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+          style={{ transition: 'stroke-dashoffset 0.6s ease' }}
+        />
+      </svg>
+      {children && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}

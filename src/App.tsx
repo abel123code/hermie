@@ -5,6 +5,7 @@ import { ReviewScreen } from './components/ReviewScreen';
 import { ManagePage } from './components/ManagePage';
 import { useSubjects, useCaptures, useDueCounts } from './hooks/useSubjects';
 import { useStudyMode } from './hooks/useStudyMode';
+import { useGameStats } from './hooks/useGameStats';
 
 type View = 'dashboard' | 'review' | 'manage';
 
@@ -27,13 +28,17 @@ function App() {
 
   const { captures, reload: reloadCaptures } = useCaptures(selectedSubjectId, isLoading);
   const { dueCounts, reload: reloadDueCounts } = useDueCounts(subjects);
-  
+  const { stats, level, reload: reloadStats } = useGameStats();
+
   // Store reload functions in refs to avoid dependency issues
   const reloadDueCountsRef = useRef(reloadDueCounts);
   reloadDueCountsRef.current = reloadDueCounts;
-  
+
   const reloadCapturesRef = useRef(reloadCaptures);
   reloadCapturesRef.current = reloadCaptures;
+
+  const reloadStatsRef = useRef(reloadStats);
+  reloadStatsRef.current = reloadStats;
 
   // Study mode & capture handling
   const {
@@ -44,7 +49,10 @@ function App() {
     handleCapture,
     handleUndo,
     showToast,
-  } = useStudyMode(selectedSubjectIdRef, useCallback(() => reloadCapturesRef.current(), []));
+  } = useStudyMode(selectedSubjectIdRef, useCallback(() => {
+    reloadCapturesRef.current();
+    reloadStatsRef.current();
+  }, []));
 
   // Start review for a subject
   const handleStartReview = useCallback((subjectId: string) => {
@@ -55,8 +63,8 @@ function App() {
   // Exit review back to dashboard
   const handleExitReview = useCallback(() => {
     setView('dashboard');
-    // Reload due counts when coming back from review
     reloadDueCountsRef.current();
+    reloadStatsRef.current();
   }, []);
 
   // Open manage page
@@ -67,9 +75,9 @@ function App() {
   // Exit manage page back to dashboard
   const handleExitManage = useCallback(() => {
     setView('dashboard');
-    // Reload captures when coming back from manage (user may have deleted some)
     reloadCapturesRef.current();
     reloadDueCountsRef.current();
+    reloadStatsRef.current();
   }, []);
 
   // Get subject name for review screen
@@ -81,7 +89,10 @@ function App() {
     return (
       <div className="dashboard">
         <div className="dashboard-content">
-          <span className="text-neutral-500">Loading...</span>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+            <div style={{ fontSize: '40px' }}>📚</div>
+            <span style={{ color: '#636E72', fontFamily: '"Fredoka"', fontSize: '16px' }}>Loading...</span>
+          </div>
         </div>
       </div>
     );
@@ -141,6 +152,8 @@ function App() {
       captures={captures}
       toast={toast}
       onShowToast={showToast}
+      stats={stats}
+      level={level}
     />
   );
 }

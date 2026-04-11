@@ -25,6 +25,9 @@ import {
   getCaptureById,
   type Rating,
   type CaptureFilter,
+  getUserStats,
+  addXP,
+  getLevelInfo,
 } from './services/db';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
@@ -253,11 +256,15 @@ async function triggerCapture(subjectId: string) {
       expiresAt: Date.now() + UNDO_WINDOW_MS,
     };
 
+    // Award XP for capture
+    const xpResult = addXP(5);
+
     // Send capture:saved event to renderer for the undo bubble
     activeWindow.webContents.send('capture:saved', {
       id: result.id,
       imagePath: result.imagePath,
       expiresInMs: UNDO_WINDOW_MS,
+      xp: xpResult,
     });
 
     captureInProgress = false;
@@ -549,7 +556,14 @@ ipcMain.handle('review:next', (_event, { subjectId }: { subjectId: string }) => 
 });
 
 ipcMain.handle('review:grade', (_event, { id, rating }: { id: string; rating: Rating }) => {
-  return gradeCapture(id, rating, Date.now());
+  const result = gradeCapture(id, rating, Date.now());
+  if (result.ok) {
+    // Award XP based on rating
+    const xpMap: Record<Rating, number> = { again: 5, good: 10, easy: 15 };
+    const xpResult = addXP(xpMap[rating]);
+    return { ...result, xp: xpResult };
+  }
+  return result;
 });
 
 // Image URL
@@ -615,4 +629,18 @@ ipcMain.handle('manage:countCaptures', (_event, { subjectId }: { subjectId: stri
 
 ipcMain.handle('manage:deleteCapture', async (_event, { id }: { id: string }) => {
   return deleteCaptureAndFile(id);
+});
+
+// ===== Gamification IPC Handlers =====
+
+ipcMain.handle('stats:get', () => {
+  return getUserStats();
+});
+
+ipcMain.handle('stats:addXP', (_event, { amount }: { amount: number }) => {
+  return addXP(amount);
+});
+
+ipcMain.handle('stats:getLevel', (_event, { totalXp }: { totalXp: number }) => {
+  return getLevelInfo(totalXp);
 });

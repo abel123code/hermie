@@ -11,10 +11,11 @@ export function DeleteModal({ subject, onConfirm, onCancel }: DeleteModalProps) 
   return (
     <div className="modal-overlay" onClick={onCancel}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-lg font-medium text-white mb-2">Delete Subject</h3>
-        <p className="text-sm text-neutral-400 mb-4">
-          Are you sure you want to delete "{subject.name}"?
-          This will also delete all captures in this subject.
+        <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '22px', fontWeight: 400, color: 'var(--ink)', marginBottom: '8px' }}>
+          Delete subject?
+        </h3>
+        <p style={{ fontSize: '14px', color: 'var(--ink-secondary)', marginBottom: '24px', lineHeight: 1.5 }}>
+          "{subject.name}" and all its captures will be permanently removed.
         </p>
         <div className="flex gap-3 justify-end">
           <button onClick={onCancel} className="modal-btn-cancel">
@@ -28,4 +29,3 @@ export function DeleteModal({ subject, onConfirm, onCancel }: DeleteModalProps) 
     </div>
   );
 }
-

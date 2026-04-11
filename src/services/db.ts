@@ -89,6 +89,16 @@ export function initDatabase(): void {
     CREATE INDEX IF NOT EXISTS idx_captures_subject_id ON captures(subject_id);
     CREATE INDEX IF NOT EXISTS idx_captures_created_at ON captures(created_at);
     CREATE INDEX IF NOT EXISTS idx_captures_subject_due ON captures(subject_id, due_at);
+
+    CREATE TABLE IF NOT EXISTS user_stats (
+      id TEXT PRIMARY KEY DEFAULT 'main',
+      total_xp INTEGER NOT NULL DEFAULT 0,
+      current_streak INTEGER NOT NULL DEFAULT 0,
+      longest_streak INTEGER NOT NULL DEFAULT 0,
+      last_study_date TEXT,
+      cards_reviewed_today INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL
+    );
   `);
   
   // Ensure inbox subject exists
@@ -438,6 +448,150 @@ export function getCaptureById(id: string): { imagePath: string } | null {
   `).get(id) as { imagePath: string } | undefined;
 
   return row ?? null;
+}
+
+// ===== Gamification =====
+
+export interface UserStats {
+  totalXp: number;
+  currentStreak: number;
+  longestStreak: number;
+  lastStudyDate: string | null;
+  cardsReviewedToday: number;
+}
+
+export interface LevelInfo {
+  level: number;
+  title: string;
+  currentXp: number;
+  xpForCurrentLevel: number;
+  xpForNextLevel: number;
+  progress: number;
+}
+
+const LEVELS = [
+  { level: 1, xp: 0, title: 'Freshman' },
+  { level: 2, xp: 100, title: 'Bookworm' },
+  { level: 3, xp: 300, title: 'Scholar' },
+  { level: 4, xp: 600, title: 'Brain' },
+  { level: 5, xp: 1000, title: 'Sage' },
+  { level: 6, xp: 1500, title: 'Genius' },
+  { level: 7, xp: 2500, title: 'Legend' },
+  { level: 8, xp: 4000, title: 'Grandmaster' },
+];
+
+export function getLevelInfo(totalXp: number): LevelInfo {
+  let current = LEVELS[0];
+  let next = LEVELS[1];
+
+  for (let i = LEVELS.length - 1; i >= 0; i--) {
+    if (totalXp >= LEVELS[i].xp) {
+      current = LEVELS[i];
+      next = LEVELS[i + 1] || LEVELS[i];
+      break;
+    }
+  }
+
+  const xpInLevel = totalXp - current.xp;
+  const xpNeeded = next.xp - current.xp;
+
+  return {
+    level: current.level,
+    title: current.title,
+    currentXp: totalXp,
+    xpForCurrentLevel: current.xp,
+    xpForNextLevel: next.xp,
+    progress: xpNeeded > 0 ? Math.min(1, xpInLevel / xpNeeded) : 1,
+  };
+}
+
+function getTodayDateStr(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function ensureUserStats(): void {
+  if (!db) throw new Error('Database not initialized');
+  const row = db.prepare('SELECT id FROM user_stats WHERE id = ?').get('main');
+  if (!row) {
+    db.prepare(
+      'INSERT INTO user_stats (id, total_xp, current_streak, longest_streak, last_study_date, cards_reviewed_today, created_at) VALUES (?, 0, 0, 0, NULL, 0, ?)'
+    ).run('main', Date.now());
+  }
+}
+
+export function getUserStats(): UserStats {
+  if (!db) throw new Error('Database not initialized');
+  ensureUserStats();
+
+  const row = db.prepare(`
+    SELECT total_xp as totalXp, current_streak as currentStreak, longest_streak as longestStreak,
+           last_study_date as lastStudyDate, cards_reviewed_today as cardsReviewedToday
+    FROM user_stats WHERE id = 'main'
+  `).get() as UserStats;
+
+  // Reset cards_reviewed_today if last study date is not today
+  const today = getTodayDateStr();
+  if (row.lastStudyDate !== today) {
+    row.cardsReviewedToday = 0;
+  }
+
+  return row;
+}
+
+export function addXP(amount: number): { xpGained: number; newTotalXp: number; leveledUp: boolean; newLevel: LevelInfo; stats: UserStats } {
+  if (!db) throw new Error('Database not initialized');
+  ensureUserStats();
+
+  const today = getTodayDateStr();
+  const stats = getUserStats();
+  const oldLevel = getLevelInfo(stats.totalXp);
+
+  // Update streak
+  let newStreak = stats.currentStreak;
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = yesterday.toISOString().slice(0, 10);
+
+  if (stats.lastStudyDate === today) {
+    // Already studied today, no streak change
+  } else if (stats.lastStudyDate === yesterdayStr) {
+    // Consecutive day
+    newStreak = stats.currentStreak + 1;
+  } else {
+    // Streak broken or first time
+    newStreak = 1;
+  }
+
+  const longestStreak = Math.max(stats.longestStreak, newStreak);
+  const newTotalXp = stats.totalXp + amount;
+  const cardsToday = (stats.lastStudyDate === today ? stats.cardsReviewedToday : 0) + 1;
+
+  db.prepare(`
+    UPDATE user_stats SET
+      total_xp = ?,
+      current_streak = ?,
+      longest_streak = ?,
+      last_study_date = ?,
+      cards_reviewed_today = ?
+    WHERE id = 'main'
+  `).run(newTotalXp, newStreak, longestStreak, today, cardsToday);
+
+  const newLevel = getLevelInfo(newTotalXp);
+  const leveledUp = newLevel.level > oldLevel.level;
+
+  return {
+    xpGained: amount,
+    newTotalXp,
+    leveledUp,
+    newLevel,
+    stats: {
+      totalXp: newTotalXp,
+      currentStreak: newStreak,
+      longestStreak,
+      lastStudyDate: today,
+      cardsReviewedToday: cardsToday,
+    },
+  };
 }
 
 export function closeDatabase(): void {
